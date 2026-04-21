@@ -1,0 +1,3 @@
+{"level": "session_start", "timestamp": "2026-04-21T05:59:37.096820", "project_root": "C:\\Users\\computer\\Desktop\\AI\\video_trimmer", "python": "3.11.9", "platform": "Windows-10-10.0.26200-SP0", "pid": 35852}
+{"level": "info", "timestamp": "2026-04-21T05:59:37.171890", "message": "faulthandler armed", "file": "C:\\Users\\computer\\Desktop\\AI\\video_trimmer\\logs\\faulthandler_20260421_055937.log"}
+{"level": "session_end", "timestamp": "2026-04-21T05:59:37.744867"}
