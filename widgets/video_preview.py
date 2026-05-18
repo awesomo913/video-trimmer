@@ -9,7 +9,8 @@ import customtkinter as ctk
 from PIL import Image
 
 from config import COLORS, FONT_UI, FONT_MONO
-from services.video_service import VideoState, PlaybackEngine
+from services.edit_transforms import apply_pil_transforms
+from services.video_service import VideoState, PlaybackEngine, read_frame_at
 
 
 class VideoPreview(ctk.CTkFrame):
@@ -23,7 +24,8 @@ class VideoPreview(ctk.CTkFrame):
         self._on_frame_update = on_frame_update
         self._frame_queue: queue.Queue[Image.Image] = queue.Queue(maxsize=3)
         self._engine: PlaybackEngine | None = None
-        self._photo: ImageTk.PhotoImage | None = None
+        self._photo: ctk.CTkImage | None = None
+        self._last_raw_frame: Image.Image | None = None
         self._polling = False
 
         # ── Display area ─────────────────────────────────────────
@@ -107,6 +109,7 @@ class VideoPreview(ctk.CTkFrame):
         """Attach a new video state after opening a file."""
         self.stop()
         self._state = state
+        self._last_raw_frame = None
         self._frame_queue = queue.Queue(maxsize=3)
         self._engine = PlaybackEngine(state, self._frame_queue)
         self._placeholder.place_forget()
@@ -185,22 +188,54 @@ class VideoPreview(ctk.CTkFrame):
         self.after(30, self._poll)
 
     def _show_frame(self, img: Image.Image):
-        """Scale the frame to fit the display area and show it."""
-        # Get available display size
+        """Remember raw pixels, apply edits, scale to the label, and show."""
+        self._last_raw_frame = img.copy()
+        self._render_from_raw(self._last_raw_frame)
+
+    def _render_from_raw(self, raw: Image.Image):
+        """Apply crop/rotate/flip from state, then scale to fit."""
+        edited = apply_pil_transforms(raw, self._state)
         dw = self._display.winfo_width()
         dh = self._display.winfo_height()
         if dw < 10 or dh < 10:
             dw, dh = 800, 450
 
-        iw, ih = img.size
+        iw, ih = edited.size
         scale = min(dw / iw, dh / ih)
         new_w = max(1, int(iw * scale))
         new_h = max(1, int(ih * scale))
 
-        resized = img.resize((new_w, new_h), Image.LANCZOS)
-        self._photo = ctk.CTkImage(light_image=resized, dark_image=resized,
-                                   size=(new_w, new_h))
+        resized = edited.resize((new_w, new_h), Image.LANCZOS)
+        self._photo = ctk.CTkImage(
+            light_image=resized, dark_image=resized, size=(new_w, new_h)
+        )
         self._display.configure(image=self._photo, text="")
+
+    def refresh_after_edit(self):
+        """Re-render the current frame after crop/rotate/flip changes (paused UI)."""
+        if self._last_raw_frame is None:
+            return
+        self._render_from_raw(self._last_raw_frame)
+
+    def get_snapshot_image(self) -> Image.Image | None:
+        """Current frame with edits applied (safe while playing via last-frame cache)."""
+        if not self._state.loaded:
+            return None
+        if self._last_raw_frame is not None:
+            return apply_pil_transforms(self._last_raw_frame.copy(), self._state)
+        was_playing = self._engine is not None and self._engine.playing
+        if self._engine and was_playing:
+            self._engine.pause()
+            self._btn_play.configure(text="\u25B6")
+        try:
+            raw = read_frame_at(self._state, self._state.current_frame)
+            if raw is None:
+                return None
+            return apply_pil_transforms(raw, self._state)
+        finally:
+            if self._engine and was_playing:
+                self._engine.play()
+                self._btn_play.configure(text="\u23F8")
 
     def _update_time_display(self):
         if not self._state.loaded:
@@ -212,6 +247,7 @@ class VideoPreview(ctk.CTkFrame):
 
     def stop(self):
         self._polling = False
+        self._last_raw_frame = None
         if self._engine:
             self._engine.stop()
             self._engine = None

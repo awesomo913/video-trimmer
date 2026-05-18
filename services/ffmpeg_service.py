@@ -118,6 +118,7 @@ class TrimJob:
     copy_streams: bool = True
     crf: int | None = None
     include_audio: bool = True
+    video_filter: str | None = None
     process: subprocess.Popen | None = field(default=None, repr=False)
     cancel_event: threading.Event = field(default_factory=threading.Event)
     progress: float = 0.0
@@ -134,7 +135,20 @@ def build_trim_cmd(job: TrimJob) -> list[str]:
     cmd += ["-i", job.input_path]
     cmd += ["-to", str(job.end - job.start)]
 
-    if job.copy_streams:
+    video_must_encode = bool(job.video_filter)
+
+    if video_must_encode:
+        if job.video_filter:
+            cmd += ["-vf", job.video_filter]
+        cmd += ["-c:v", "libx264", "-preset", "medium"]
+        crf = job.crf if job.crf is not None else 23
+        cmd += ["-crf", str(crf)]
+        if job.include_audio:
+            if job.copy_streams:
+                cmd += ["-c:a", "copy"]
+            else:
+                cmd += ["-c:a", "aac", "-b:a", "192k"]
+    elif job.copy_streams:
         cmd += ["-c", "copy"]
     else:
         cmd += ["-c:v", "libx264", "-preset", "medium"]

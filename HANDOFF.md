@@ -59,6 +59,28 @@ OpenCV was chosen for preview (fast random-access frame reads) and ffmpeg for ex
   - Saved doc copies to `Desktop/AI/docs/` per central-copy rule
 - Verified: will run `check-gui-integrity.sh` + `auto-git-push.sh` as final step
 
+### 2026-04-21 — Batch Split mode (v1.2.0)
+- User vision: every video in a folder split into halves / thirds / fourths / sixths / etc., to feed smaller pieces to AI tools with size or duration limits
+- User-designed details:
+  - Mode toggle at top of window (Single | Batch) — keeps original trimmer intact
+  - All split denominations available: preset buttons (2/3/4/6/8), custom N up to 20, AND duration-chunk mode
+  - Output to `<source_folder>/split_output/` subfolder
+  - Same encode picker as single-file export (Copy/CRF 18/23/28/35, audio toggle, 5 formats)
+- Claude implemented:
+  - `services/batch_split_service.py` — folder scan, segment math (equal + duration), threaded sequential runner (one ffmpeg at a time), cancel support
+  - `widgets/mode_switcher.py` — Single/Batch segmented toggle
+  - `widgets/split_config_panel.py` — mode radio + preset buttons + custom N + duration entry + format/quality picker
+  - `widgets/batch_file_row.py` — one row per file with name/duration/status badge/progress
+  - `widgets/batch_panel.py` — composes the above; folder picker, scrollable file list, overall progress, start/cancel
+  - `app.py` mode swap — `pack_forget` single-mode widgets when batch active, restore on switch back
+  - Bumped version to 1.2.0
+- Verified end-to-end:
+  - Generated 3 test videos (12s, 30s, 60s), scanned folder → 3 entries with correct durations
+  - Equal mode 4-parts → 12 output files with correct part numbering
+  - Duration mode 20s chunks → 60s file produced 3×20s parts, 30s file produced 2 parts (20s + 10s), 12s file correctly skipped
+  - GUI smoke: mode switch hides preview/timeline/trim_ctrl/edit_ctrl, shows batch panel; switch back restores layout
+- Reuses existing infrastructure unchanged: `TrimJob`, `run_trim`, `get_metadata`, `VIDEO_EXTENSIONS`, `EXPORT_FORMATS`, `QUALITY_PRESETS`
+
 ## 5. Credit & Authorship
 > **The user designed this product.** The user defined goals, feature priorities, UI palette, keyboard shortcuts, and acceptance criteria. Claude (this session) implemented the code to those specifications and verified behavior end-to-end. The user reviewed and approved before push. This is the user's product; AI was a tool.
 

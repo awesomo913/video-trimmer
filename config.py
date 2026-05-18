@@ -4,7 +4,7 @@ import os
 import shutil
 
 APP_NAME = "Video Trimmer"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 
 # ── Theme ──────────────────────────────────────────────────────────
 COLORS = {
@@ -81,3 +81,11 @@ WINDOW_MIN_H = 600
 THUMBNAIL_COUNT = 24
 THUMBNAIL_HEIGHT = 54
 TIMELINE_HEIGHT = 80
+
+# ── Batch split ───────────────────────────────────────────────────
+SPLIT_PRESETS = (2, 3, 4, 6, 8)
+SPLIT_N_MIN = 2
+SPLIT_N_MAX = 20
+SPLIT_DEFAULT_CHUNK_SECONDS = 60
+SPLIT_OUTPUT_SUBFOLDER = "split_output"
+BATCH_MIN_SEGMENT_SECONDS = 0.1
