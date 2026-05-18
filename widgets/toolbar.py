@@ -12,7 +12,14 @@ from config import COLORS, FONT_TITLE, FONT_UI, FONT_UI_SMALL, FONT_MONO_SMALL, 
 class Toolbar(ctk.CTkFrame):
     """Horizontal toolbar with branding, buttons, and metadata display."""
 
-    def __init__(self, master, on_open: Callable, on_export: Callable, **kwargs):
+    def __init__(
+        self,
+        master,
+        on_open: Callable,
+        on_export: Callable,
+        on_snapshot: Callable,
+        **kwargs,
+    ):
         super().__init__(master, height=44, fg_color=COLORS["bg_light"], **kwargs)
         self.pack_propagate(False)
 
@@ -51,6 +58,15 @@ class Toolbar(ctk.CTkFrame):
         )
         self._btn_export.pack(side="left", padx=4)
 
+        self._btn_snapshot = ctk.CTkButton(
+            btn_frame, text="\U0001F5BC Snapshot",
+            font=FONT_UI, width=100, height=30,
+            fg_color=COLORS["bg_surface"],
+            hover_color=COLORS["accent"],
+            command=on_snapshot,
+        )
+        self._btn_snapshot.pack(side="left", padx=4)
+
         # ── Right: metadata display ──────────────────────────────
         self._meta_label = ctk.CTkLabel(
             self, text="No file loaded",
@@ -62,7 +78,8 @@ class Toolbar(ctk.CTkFrame):
 
         # Keyboard hints
         hints = ctk.CTkLabel(
-            self, text="Ctrl+O: Open  |  Ctrl+E: Export  |  Space: Play/Pause",
+            self,
+            text="Ctrl+O Open | Ctrl+E Export | Ctrl+Shift+S Snapshot | Space Play",
             font=("Segoe UI", 9),
             text_color=COLORS["text_dim"],
             anchor="e",

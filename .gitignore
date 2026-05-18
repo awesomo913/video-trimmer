@@ -10,3 +10,6 @@ venv/
 test_trim_output.*
 logs/
 *.log
+build/
+dist/
+_test_videos/

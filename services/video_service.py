@@ -29,6 +29,16 @@ class VideoState:
     trim_start: float = 0.0
     trim_end: float = 0.0
 
+    # Edit transforms (preview + export): crop = inset % per edge (0–50)
+    crop_enabled: bool = False
+    crop_left_pct: float = 0.0
+    crop_top_pct: float = 0.0
+    crop_right_pct: float = 0.0
+    crop_bottom_pct: float = 0.0
+    rotation_cw: int = 0  # 0, 90, 180, 270 clockwise
+    flip_horizontal: bool = False
+    flip_vertical: bool = False
+
     @property
     def current_time(self) -> float:
         if self.fps <= 0:

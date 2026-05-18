@@ -55,6 +55,25 @@ python main.py
   - The IN point can't pass the OUT point (and vice versa) — they're clamped at 0.1s apart.
   - The `Reset` button restores trim to the full video length.
 
+### Batch Split (v1.2.0+)
+- **What it does:** Splits every video in a folder into N equal parts (or fixed-duration chunks), all at once.
+- **When to use it:** You have a pile of long videos and you want quick smaller pieces for an AI tool that has size/duration limits. Click once, walk away.
+- **How:**
+  1. Click `Batch Split` at the top of the window.
+  2. Click `Choose Folder`, pick the folder full of videos.
+  3. App scans and lists every video found with its duration.
+  4. Pick a split strategy:
+     - **Equal parts** — click 2, 3, 4, 6, or 8 (or type any number 2–20)
+     - **Duration chunks** — type seconds per chunk (e.g. 60)
+  5. Pick output format + quality + audio.
+  6. Click `Start Batch Split`. Watch the per-file progress.
+  7. When done, Explorer opens the `split_output/` subfolder automatically.
+- **Example:** Folder with 5 videos × 4 parts each → 20 output files in `<folder>/split_output/`, named `<original>_part_1_of_4.mp4` etc.
+- **Gotchas:**
+  - In duration mode, videos shorter than the chunk size get skipped (with a clear "skipped" label).
+  - `Copy` quality is fastest but cuts at keyframes — part lengths may drift a few frames. Use a CRF preset for frame-accurate splits.
+  - Cancel mid-batch stops the current video; any not-yet-started videos stay pending (no half files).
+
 ### Export
 - **What it does:** Writes your trimmed clip as a new file.
 - **How:** Press `Ctrl+E` or click `Export` in the toolbar. A dialog appears:
@@ -122,6 +141,20 @@ python main.py
 ---
 
 ## 6. Changelog
+
+### 2026-04-21 — v1.2.0 — Batch Split mode
+- Added: **Batch mode** — toggle at top of window switches between Single (the original trimmer) and Batch Split
+- Added: Folder picker — pick any folder; app scans every video inside it (subfolders ignored)
+- Added: Two split strategies:
+  - **Equal parts** — pick 2, 3, 4, 6, 8 (preset buttons) or any number 2–20 (custom)
+  - **Duration chunks** — split into N-second pieces (e.g. 60s chunks)
+- Added: Per-batch encode picker — format + quality + audio (same options as single-file export)
+- Added: Output auto-saved to `<source_folder>/split_output/`
+- Added: Per-file status row (pending / running / done / skipped / failed / unreadable) with thin progress bar while running
+- Added: Overall progress bar at bottom with "X% — filename — part 2/4" indicator
+- Added: Cancel mid-batch — kills current ffmpeg, leaves untouched files alone
+- Added: Output folder auto-opens in Explorer when batch finishes successfully
+- Added: Skip behavior — duration mode skips any video shorter than the chunk size with a clear "skipped" status
 
 ### 2026-04-15 — v1.0.0 (initial release)
 - Added: Open any common video format (MP4, MKV, MOV, WebM, AVI, FLV, WMV, TS, M4V, MPG, 3GP, and more)

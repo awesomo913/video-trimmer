@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from tkinter import filedialog
 
 import customtkinter as ctk
@@ -22,6 +21,9 @@ from widgets.video_preview import VideoPreview
 from widgets.timeline import Timeline
 from widgets.trim_controls import TrimControls
 from widgets.export_dialog import ExportDialog
+from widgets.edit_controls import EditControls
+from widgets.mode_switcher import ModeSwitcher
+from widgets.batch_panel import BatchPanel
 
 
 class VideoTrimmerApp(ctk.CTk):
@@ -47,6 +49,8 @@ class VideoTrimmerApp(ctk.CTk):
 
         # ── State ────────────────────────────────────────────────
         self._state = VideoState()
+        self._mode = "single"
+        self._batch_panel: BatchPanel | None = None
 
         # ── Layout ───────────────────────────────────────────────
         self._build_ui()
@@ -56,9 +60,16 @@ class VideoTrimmerApp(ctk.CTk):
         self._setup_dnd()
 
     def _build_ui(self):
+        # Mode switcher (very top)
+        self._mode_switcher = ModeSwitcher(self, on_mode_change=self._on_mode_change)
+        self._mode_switcher.pack(fill="x", side="top")
+
         # Toolbar
         self._toolbar = Toolbar(
-            self, on_open=self._open_file, on_export=self._open_export,
+            self,
+            on_open=self._open_file,
+            on_export=self._open_export,
+            on_snapshot=self._export_snapshot,
         )
         self._toolbar.pack(fill="x", side="top")
 
@@ -83,6 +94,13 @@ class VideoTrimmerApp(ctk.CTk):
         )
         self._timeline.pack(fill="x", side="bottom", ipady=4)
 
+        self._edit_ctrl = EditControls(
+            self,
+            state=self._state,
+            on_edit_change=self._on_edit_change,
+        )
+        self._edit_ctrl.pack(fill="x", side="bottom", padx=8, pady=(0, 4))
+
         # Video preview (takes remaining space)
         self._preview = VideoPreview(
             self, state=self._state,
@@ -95,6 +113,8 @@ class VideoTrimmerApp(ctk.CTk):
         self.bind("<Control-O>", lambda e: self._open_file())
         self.bind("<Control-e>", lambda e: self._open_export())
         self.bind("<Control-E>", lambda e: self._open_export())
+        self.bind("<Control-Shift-s>", lambda e: self._export_snapshot())
+        self.bind("<Control-Shift-S>", lambda e: self._export_snapshot())
         self.bind("<space>", lambda e: self._toggle_play())
         self.bind("<Left>", lambda e: self._step_frames(-1))
         self.bind("<Right>", lambda e: self._step_frames(1))
@@ -149,6 +169,7 @@ class VideoTrimmerApp(ctk.CTk):
         self._timeline.attach_state(self._state)
         self._trim_ctrl._state = self._state
         self._trim_ctrl.update_display()
+        self._edit_ctrl.attach_state(self._state)
 
         # Update toolbar metadata
         self._toolbar.set_metadata(
@@ -215,6 +236,87 @@ class VideoTrimmerApp(ctk.CTk):
         """Called when trim handles are dragged or timecodes are entered."""
         self._trim_ctrl.update_display()
         self._timeline._draw_overlays()
+
+    def _on_edit_change(self):
+        self._preview.refresh_after_edit()
+
+    # ── Mode switching ───────────────────────────────────────────
+
+    def _on_mode_change(self, mode: str) -> None:
+        if mode == self._mode:
+            return
+        self._mode = mode
+        if mode == "batch":
+            self._enter_batch_mode()
+        else:
+            self._enter_single_mode()
+
+    def _enter_batch_mode(self) -> None:
+        # Pause playback if running
+        if self._preview is not None:
+            try:
+                self._preview.pause()
+            except Exception:
+                pass
+        # Hide single-mode widgets
+        for w in (self._preview, self._timeline, self._trim_ctrl, self._edit_ctrl):
+            try:
+                w.pack_forget()
+            except Exception:
+                pass
+        # Lazy-instantiate batch panel
+        if self._batch_panel is None:
+            self._batch_panel = BatchPanel(self)
+        self._batch_panel.pack(fill="both", expand=True, side="top")
+        self._status.set_status("Batch mode — pick a folder of videos", COLORS["accent"])
+
+    def _enter_single_mode(self) -> None:
+        if self._batch_panel is not None:
+            self._batch_panel.pack_forget()
+        # Re-pack single-mode widgets in their original order
+        # (bottom-anchored widgets pack from bottom-up, preview takes the rest)
+        self._trim_ctrl.pack(fill="x", side="bottom")
+        self._timeline.pack(fill="x", side="bottom", ipady=4)
+        self._edit_ctrl.pack(fill="x", side="bottom", padx=8, pady=(0, 4))
+        self._preview.pack(fill="both", expand=True, side="top")
+        if self._state.loaded:
+            fname = os.path.basename(self._state.path)
+            self._status.set_status(f"Loaded: {fname}", COLORS["success"])
+        else:
+            self._status.set_status("Ready")
+
+    def _export_snapshot(self):
+        if not self._state.loaded:
+            Toast(self, "No video loaded", "warning")
+            return
+        img = self._preview.get_snapshot_image()
+        if img is None:
+            Toast(self, "Could not capture frame", "error")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Save frame as image",
+            defaultextension=".png",
+            filetypes=[
+                ("PNG", "*.png"),
+                ("JPEG", "*.jpg"),
+                ("WebP", "*.webp"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        lower = path.lower()
+        try:
+            if lower.endswith((".jpg", ".jpeg")):
+                img.convert("RGB").save(path, quality=95)
+            elif lower.endswith(".webp"):
+                img.save(path, format="WEBP", quality=90)
+            else:
+                img.save(path)
+            Toast(self, f"Saved {os.path.basename(path)}", "success")
+            self._status.set_status("Frame saved", COLORS["success"])
+        except OSError as exc:
+            Toast(self, f"Save failed: {exc}", "error")
 
     # ── Export ───────────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ from config import (
     COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD, FONT_MONO,
     EXPORT_FORMATS, QUALITY_PRESETS,
 )
+from services.edit_transforms import edits_active, ffmpeg_vf_chain
 from services.ffmpeg_service import TrimJob, run_trim, format_time
 from services.video_service import VideoState
 
@@ -29,7 +30,7 @@ class ExportDialog(ctk.CTkToplevel):
         self._job: TrimJob | None = None
 
         self.title("Export Trimmed Video")
-        self.geometry("480x420")
+        self.geometry("480x460")
         self.resizable(False, False)
         self.configure(fg_color=COLORS["bg"])
         self.transient(master)
@@ -46,13 +47,25 @@ class ExportDialog(ctk.CTkToplevel):
         summary.pack(fill="x", padx=16, pady=(16, 8))
 
         dur = self._state.trim_end - self._state.trim_start
+        has_edits = edits_active(self._state)
         ctk.CTkLabel(
             summary,
             text=f"Trim: {format_time(self._state.trim_start)} \u2192 "
                  f"{format_time(self._state.trim_end)}  "
                  f"({format_time(dur)})",
             font=FONT_MONO, text_color=COLORS["text"],
-        ).pack(padx=12, pady=8)
+        ).pack(padx=12, pady=(8, 8 if not has_edits else 4))
+
+        if has_edits:
+            ctk.CTkLabel(
+                summary,
+                text="Edits (crop / rotate / flip) are baked in. Video will be re-encoded; "
+                     "audio can still be copied if you choose Copy quality.",
+                font=FONT_UI_SMALL,
+                text_color=COLORS["warning"],
+                wraplength=430,
+                justify="left",
+            ).pack(padx=12, pady=(0, 8))
 
         # ── Format ───────────────────────────────────────────────
         ctk.CTkLabel(
@@ -158,6 +171,7 @@ class ExportDialog(ctk.CTkToplevel):
 
         # Build job
         quality = QUALITY_PRESETS[self._quality_var.get()]
+        vf = ffmpeg_vf_chain(self._state)
         self._job = TrimJob(
             input_path=self._state.path,
             output_path=output_path,
@@ -166,6 +180,7 @@ class ExportDialog(ctk.CTkToplevel):
             copy_streams=quality["copy"],
             crf=quality["crf"],
             include_audio=self._audio_var.get(),
+            video_filter=vf,
         )
 
         self._btn_export.configure(state="disabled")
