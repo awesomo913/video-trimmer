@@ -48,7 +48,7 @@ class Toast(ctk.CTkFrame):
         # Close button
         close_btn = ctk.CTkButton(
             self, text="\u2715", width=24, height=24,
-            fg_color="transparent", hover_color="#ffffff30",
+            fg_color="transparent", hover_color="#444444",
             text_color="#ffffff", font=("Segoe UI", 10),
             command=self._dismiss,
         )

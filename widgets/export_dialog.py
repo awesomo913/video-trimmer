@@ -169,6 +169,16 @@ class ExportDialog(ctk.CTkToplevel):
         if not output_path:
             return
 
+        # Never let the export overwrite the source file being trimmed.
+        if os.path.abspath(output_path) == os.path.abspath(self._state.path):
+            from tkinter import messagebox
+            messagebox.showwarning(
+                "Invalid destination",
+                "Pick a different file — you can't export over the video you're trimming.",
+                parent=self,
+            )
+            return
+
         # Build job
         quality = QUALITY_PRESETS[self._quality_var.get()]
         vf = ffmpeg_vf_chain(self._state)

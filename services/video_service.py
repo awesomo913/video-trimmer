@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import subprocess
 import threading
@@ -12,6 +13,8 @@ import cv2
 from PIL import Image
 
 from config import THUMBNAIL_COUNT, THUMBNAIL_HEIGHT, FFPLAY_BIN
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -128,19 +131,20 @@ def generate_thumbnails(
         aspect = state.width / max(state.height, 1)
         thumb_w = int(height * aspect)
 
-        for i in range(count):
-            frame_num = min(i * step, state.frame_count - 1)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-            ret, frame = cap.read()
-            if not ret:
-                # Pad with a black frame
-                thumbs.append(Image.new("RGB", (thumb_w, height), (20, 20, 30)))
-                continue
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(rgb).resize((thumb_w, height), Image.LANCZOS)
-            thumbs.append(img)
-
-        cap.release()
+        try:
+            for i in range(count):
+                frame_num = min(i * step, state.frame_count - 1)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                ret, frame = cap.read()
+                if not ret:
+                    # Pad with a black frame
+                    thumbs.append(Image.new("RGB", (thumb_w, height), (20, 20, 30)))
+                    continue
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(rgb).resize((thumb_w, height), Image.LANCZOS)
+                thumbs.append(img)
+        finally:
+            cap.release()  # never leak the OS video handle, even on decode error
         if on_done:
             on_done(thumbs)
 
@@ -182,17 +186,18 @@ class PlaybackEngine:
     # ── Audio helpers (ffplay subprocess) ──────────────────────
 
     def _start_audio(self):
-        """Spawn ffplay -nodisp -autoexit at current video position."""
+        """Spawn ffplay for the current trim region's audio at the current position."""
         if self._speed != 1.0 or not self._state.path:
             return
         self._kill_audio()
         seek = max(0.0, self._state.current_time)
-        cmd = [
-            FFPLAY_BIN,
-            "-nodisp", "-autoexit",
-            "-ss", str(seek),
-            self._state.path,
-        ]
+        cmd = [FFPLAY_BIN, "-nodisp", "-autoexit", "-ss", str(seek)]
+        # Bound audio to the trim-out point so it stops with the video; it is
+        # restarted from trim_start each time the video loops (see _run).
+        dur = self._state.trim_end - seek
+        if dur > 0:
+            cmd += ["-t", str(dur)]
+        cmd.append(self._state.path)
         try:
             self._audio_proc = subprocess.Popen(
                 cmd,
@@ -200,8 +205,9 @@ class PlaybackEngine:
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-        except Exception:
+        except Exception as exc:
             self._audio_proc = None
+            log.warning("ffplay failed to start (audio disabled): %s", exc)
 
     def _kill_audio(self):
         if self._audio_proc is None:
@@ -209,8 +215,12 @@ class PlaybackEngine:
         try:
             self._audio_proc.kill()
             self._audio_proc.wait(timeout=1)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("failed to kill ffplay: %s", exc)
+            # Only drop the handle if the process is actually gone, else we'd
+            # orphan a still-playing ffplay we can never stop again.
+            if self._audio_proc.poll() is None:
+                return
         self._audio_proc = None
 
     # ── Playback control ─────────────────────────────────────
@@ -239,8 +249,10 @@ class PlaybackEngine:
         """Seek to a specific frame (works while paused or playing)."""
         frame_num = max(0, min(frame_num, self._state.frame_count - 1))
         self._state.current_frame = frame_num
-        # Restart audio from new position
-        self._start_audio()
+        # Restart audio from new position — only while actually playing, so
+        # scrubbing the timeline while paused doesn't blast audio.
+        if self._playing:
+            self._start_audio()
         if not self._playing:
             img = read_frame_at(self._state, frame_num)
             if img is not None:
@@ -263,6 +275,13 @@ class PlaybackEngine:
         self._playing = False
         self._stop.set()
         self._kill_audio()
+        # Wait for the playback thread to finish its in-flight cap.read() before
+        # the caller releases the capture — avoids a cross-thread use of the
+        # (non-thread-safe) OpenCV handle on file switch / close.
+        t = self._thread
+        if t is not None and t is not threading.current_thread():
+            t.join(timeout=1)
+        self._thread = None
 
     def _run(self):
         cap = self._state.cap
@@ -276,17 +295,19 @@ class PlaybackEngine:
         while not self._stop.is_set():
             ret, frame = cap.read()
             if not ret:
-                # End of video — loop back to trim_start
+                # End of video — loop back to trim_start (restart audio too)
                 self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, self._state.current_frame)
+                self._start_audio()
                 continue
 
             self._state.current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
 
-            # Stop at trim end
+            # Loop at trim end (restart audio from trim_start so it loops with the video)
             if self._state.current_time >= self._state.trim_end:
                 self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, self._state.current_frame)
+                self._start_audio()
                 continue
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
