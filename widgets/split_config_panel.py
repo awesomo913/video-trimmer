@@ -175,8 +175,9 @@ class SplitConfigPanel(ctk.CTkFrame):
         import tkinter as tk
         try:
             widget.configure(state=state)
-        except tk.TclError:
-            # Widget doesn't accept `state` (e.g. CTkFrame). Expected.
+        except (tk.TclError, ValueError):
+            # Widget doesn't accept `state` (e.g. CTkFrame raises ValueError,
+            # plain tk widgets raise TclError). Expected — skip it.
             pass
         for child in getattr(widget, "winfo_children", lambda: [])():
             SplitConfigPanel._set_subtree_state(child, state)

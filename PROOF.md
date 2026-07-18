@@ -45,3 +45,5 @@ If something goes wrong, look at the file `logs/crash_*.log` next to the program
 - **On April 15, 2026** — first release. You could open any common video, watch it, mark a start and end point, and save just that piece. Worked on every file we tested.
 
 - **2026-07-18** — Added OS drag-and-drop (drop a video file onto the window to load it). Wired `tkinterdnd2` into the CustomTkinter root, made the drop handler multi-file/spaces-safe, and bundled the native tkdnd files into the exe (spec). Also removed a dead `diagnostics_logger.py` data entry that was breaking the build. New VideoTrimmer.exe is in My Apps.
+
+- **2026-07-18** — Quality pass (9 fixes): audio now loops with the video and respects the trim region; no audio when scrubbing paused; Batch mode no longer crashes on open; setting OUT before IN no longer pins the CPU; playback thread is joined before releasing the video (fixes a file-switch race); ffplay no longer orphaned on kill failure; audio-start failures are logged; thumbnail capture no longer leaks on error; export refuses to overwrite the source file; fixed an invalid hover color that crashed on hover.

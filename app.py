@@ -252,7 +252,9 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _set_trim_in(self):
         if not self._state.loaded:
             return
-        self._state.trim_start = self._state.current_time
+        # Clamp so IN stays before OUT (matches the timeline/timecode paths);
+        # trim_start >= trim_end would busy-loop the playback thread.
+        self._state.trim_start = max(0.0, min(self._state.current_time, self._state.trim_end - 0.1))
         self._trim_ctrl.update_display()
         self._timeline._draw_overlays()
         Toast(self, f"IN set to {format_time(self._state.trim_start)}", "info")
@@ -260,7 +262,10 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _set_trim_out(self):
         if not self._state.loaded:
             return
-        self._state.trim_end = self._state.current_time
+        self._state.trim_end = min(
+            self._state.duration,
+            max(self._state.current_time, self._state.trim_start + 0.1),
+        )
         self._trim_ctrl.update_display()
         self._timeline._draw_overlays()
         Toast(self, f"OUT set to {format_time(self._state.trim_end)}", "info")
