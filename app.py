@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from tkinter import filedialog
 
 import customtkinter as ctk
+from tkinterdnd2 import DND_FILES, TkinterDnD
+
+log = logging.getLogger(__name__)
 
 from config import (
     APP_NAME, APP_VERSION, COLORS, VIDEO_EXTENSIONS,
@@ -26,11 +30,20 @@ from widgets.mode_switcher import ModeSwitcher
 from widgets.batch_panel import BatchPanel
 
 
-class VideoTrimmerApp(ctk.CTk):
+class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
     """Root application window."""
 
     def __init__(self):
         super().__init__()
+
+        # Load the tkdnd Tcl extension into THIS Tk interpreter so the
+        # DnDWrapper mixin's drop_target_register / dnd_bind actually work
+        # on a CustomTkinter root (which isn't a TkinterDnD.Tk by default).
+        try:
+            self.TkdndVersion = TkinterDnD._require(self)
+        except Exception as exc:
+            self.TkdndVersion = None
+            log.warning("tkdnd init failed, drag-and-drop disabled: %s", exc)
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
@@ -124,19 +137,39 @@ class VideoTrimmerApp(ctk.CTk):
         self.bind("<bracketright>", lambda e: self._set_trim_out())
 
     def _setup_dnd(self):
-        """Enable drag-and-drop via tkinterdnd2 if available, otherwise skip."""
+        """Enable OS file drag-and-drop (needs tkdnd loaded in __init__)."""
+        if getattr(self, "TkdndVersion", None) is None:
+            return
         try:
-            self.drop_target_register("DND_Files")
+            self.drop_target_register(DND_FILES)
             self.dnd_bind("<<Drop>>", self._on_drop)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("drag-and-drop registration failed: %s", exc)
 
     def _on_drop(self, event):
-        path = event.data.strip().strip("{}")
-        if os.path.isfile(path):
-            ext = os.path.splitext(path)[1].lower()
-            if ext in VIDEO_EXTENSIONS:
-                self._load_video(path)
+        # event.data is a Tk list string, e.g. "{C:/a b.mp4} {C:/c.mp4}"
+        try:
+            paths = list(self.tk.splitlist(event.data))
+        except Exception:
+            paths = [str(event.data).strip().strip("{}")]
+        vids = [
+            p for p in paths
+            if os.path.isfile(p) and os.path.splitext(p)[1].lower() in VIDEO_EXTENSIONS
+        ]
+        if not vids:
+            Toast(self, "Drop a video file", "warning")
+            return
+        # DnD targets the single-file trim flow; flip out of batch mode if needed.
+        if self._mode != "single":
+            if hasattr(self._mode_switcher, "set_mode"):
+                try:
+                    self._mode_switcher.set_mode("single")
+                except Exception as exc:
+                    log.warning("mode switch on drop failed: %s", exc)
+            self._on_mode_change("single")
+        self._load_video(vids[0])
+        if len(vids) > 1:
+            Toast(self, f"Loaded 1 of {len(vids)} dropped files", "info")
 
     # ── File operations ──────────────────────────────────────────
 

@@ -48,6 +48,7 @@ def _find_binary(name: str) -> str:
 
 FFMPEG_BIN = _find_binary("ffmpeg")
 FFPROBE_BIN = _find_binary("ffprobe")
+FFPLAY_BIN = _find_binary("ffplay")
 
 # ── Supported formats ─────────────────────────────────────────────
 VIDEO_EXTENSIONS = (
