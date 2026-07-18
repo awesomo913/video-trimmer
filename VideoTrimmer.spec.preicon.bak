@@ -1,18 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
-
-# tkinterdnd2 ships the native tkdnd Tcl extension as package data — it MUST be
-# bundled or OS drag-and-drop silently fails in the frozen exe.
-_dnd_datas = collect_data_files('tkinterdnd2')
-_dnd_hidden = collect_submodules('tkinterdnd2')
 
 a = Analysis(
     ['C:\\Users\\computer\\Desktop\\AI\\video_trimmer\\main.py'],
     pathex=[],
     binaries=[],
-    datas=[] + _dnd_datas,
-    hiddenimports=[] + _dnd_hidden,
+    datas=[('C:\\Users\\computer\\Desktop\\AI\\diagnostics_logger.py', '.')],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -41,5 +35,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=r'C:\Users\computer\Desktop\AI\video_trimmer\assets\videotrimmer.ico',
 )

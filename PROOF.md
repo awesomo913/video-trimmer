@@ -43,3 +43,5 @@ If something goes wrong, look at the file `logs/crash_*.log` next to the program
 ## Changelog
 - **On April 21, 2026** — added the ability to point at a whole folder of videos and split every one of them at once into equal parts or fixed-time pieces. This is for when you have a lot of videos and need them smaller for an AI tool. The program saves the pieces in a folder called `split_output` next to the originals.
 - **On April 15, 2026** — first release. You could open any common video, watch it, mark a start and end point, and save just that piece. Worked on every file we tested.
+
+- **2026-07-18** — Added OS drag-and-drop (drop a video file onto the window to load it). Wired `tkinterdnd2` into the CustomTkinter root, made the drop handler multi-file/spaces-safe, and bundled the native tkdnd files into the exe (spec). Also removed a dead `diagnostics_logger.py` data entry that was breaking the build. New VideoTrimmer.exe is in My Apps.

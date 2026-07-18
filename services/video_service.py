@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import subprocess
 import threading
 from dataclasses import dataclass, field
 from typing import Callable
@@ -10,7 +11,7 @@ from typing import Callable
 import cv2
 from PIL import Image
 
-from config import THUMBNAIL_COUNT, THUMBNAIL_HEIGHT
+from config import THUMBNAIL_COUNT, THUMBNAIL_HEIGHT, FFPLAY_BIN
 
 
 @dataclass
@@ -157,6 +158,9 @@ class PlaybackEngine:
         self._thread: threading.Thread | None = None
         self._speed = 1.0
 
+        # Audio playback via ffplay subprocess — synced to video position
+        self._audio_proc: subprocess.Popen | None = None
+
     @property
     def playing(self) -> bool:
         return self._playing
@@ -167,11 +171,54 @@ class PlaybackEngine:
 
     @speed.setter
     def speed(self, val: float):
+        prev = self._speed
         self._speed = max(0.25, min(val, 4.0))
+        # Audio only plays at 1x — kill ffplay when speed leaves 1x
+        if prev == 1.0 and self._speed != 1.0:
+            self._kill_audio()
+        elif prev != 1.0 and self._speed == 1.0 and self._playing:
+            self._start_audio()
+
+    # ── Audio helpers (ffplay subprocess) ──────────────────────
+
+    def _start_audio(self):
+        """Spawn ffplay -nodisp -autoexit at current video position."""
+        if self._speed != 1.0 or not self._state.path:
+            return
+        self._kill_audio()
+        seek = max(0.0, self._state.current_time)
+        cmd = [
+            FFPLAY_BIN,
+            "-nodisp", "-autoexit",
+            "-ss", str(seek),
+            self._state.path,
+        ]
+        try:
+            self._audio_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception:
+            self._audio_proc = None
+
+    def _kill_audio(self):
+        if self._audio_proc is None:
+            return
+        try:
+            self._audio_proc.kill()
+            self._audio_proc.wait(timeout=1)
+        except Exception:
+            pass
+        self._audio_proc = None
+
+    # ── Playback control ─────────────────────────────────────
 
     def play(self):
         if self._playing or not self._state.loaded:
             return
+        self._start_audio()
         self._playing = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -180,6 +227,7 @@ class PlaybackEngine:
     def pause(self):
         self._playing = False
         self._stop.set()
+        self._kill_audio()
 
     def toggle(self):
         if self._playing:
@@ -191,6 +239,8 @@ class PlaybackEngine:
         """Seek to a specific frame (works while paused or playing)."""
         frame_num = max(0, min(frame_num, self._state.frame_count - 1))
         self._state.current_frame = frame_num
+        # Restart audio from new position
+        self._start_audio()
         if not self._playing:
             img = read_frame_at(self._state, frame_num)
             if img is not None:
@@ -212,6 +262,7 @@ class PlaybackEngine:
     def stop(self):
         self._playing = False
         self._stop.set()
+        self._kill_audio()
 
     def _run(self):
         cap = self._state.cap
