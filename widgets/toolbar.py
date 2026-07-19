@@ -18,6 +18,7 @@ class Toolbar(ctk.CTkFrame):
         on_open: Callable,
         on_export: Callable,
         on_snapshot: Callable,
+        on_clear: Callable,
         **kwargs,
     ):
         super().__init__(master, height=44, fg_color=COLORS["bg_light"], **kwargs)
@@ -67,6 +68,15 @@ class Toolbar(ctk.CTkFrame):
         )
         self._btn_snapshot.pack(side="left", padx=4)
 
+        self._btn_clear = ctk.CTkButton(
+            btn_frame, text="\U0001F5D1 Clear",
+            font=FONT_UI, width=80, height=30,
+            fg_color=COLORS["bg_surface"],
+            hover_color=COLORS["error"],
+            command=on_clear,
+        )
+        self._btn_clear.pack(side="left", padx=4)
+
         # ── Right: metadata display ──────────────────────────────
         self._meta_label = ctk.CTkLabel(
             self, text="No file loaded",
@@ -88,3 +98,6 @@ class Toolbar(ctk.CTkFrame):
 
     def set_metadata(self, text: str):
         self._meta_label.configure(text=text, text_color=COLORS["text"])
+
+    def clear_metadata(self):
+        self._meta_label.configure(text="No file loaded", text_color=COLORS["text_dim"])

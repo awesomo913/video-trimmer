@@ -62,6 +62,16 @@ class Timeline(tk.Frame):
         self._thumb_ids.clear()
         self._generate_thumbs()
 
+    def clear(self):
+        """Wipe the timeline canvas back to empty (no video loaded)."""
+        self._canvas.delete("all")
+        self._thumb_photos.clear()
+        self._thumb_ids.clear()
+        self._trim_rect_id = None
+        self._handle_in_id = None
+        self._handle_out_id = None
+        self._playhead_id = None
+
     def _generate_thumbs(self):
         generate_thumbnails(
             self._state,

@@ -161,6 +161,7 @@ class PlaybackEngine:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._speed = 1.0
+        self._loop = False  # when False, playback halts at trim_end instead of repeating
 
         # Audio playback via ffplay subprocess — synced to video position
         self._audio_proc: subprocess.Popen | None = None
@@ -168,6 +169,14 @@ class PlaybackEngine:
     @property
     def playing(self) -> bool:
         return self._playing
+
+    @property
+    def loop(self) -> bool:
+        return self._loop
+
+    @loop.setter
+    def loop(self, val: bool):
+        self._loop = bool(val)
 
     @property
     def speed(self) -> float:
@@ -228,6 +237,14 @@ class PlaybackEngine:
     def play(self):
         if self._playing or not self._state.loaded:
             return
+        # Parked at (or past) the trim-out point with looping off — rewind to
+        # trim-in so pressing Play replays the clip instead of instantly halting.
+        # Compare by FRAME, not float time: trim_end defaults to duration
+        # (frame_count/fps) while the last decodable frame sits at
+        # (frame_count-1)/fps, so a float compare is always one frame short and
+        # the rewind would never fire on the common end-of-file path.
+        if not self._loop and self._state.current_frame >= self._state.time_to_frame(self._state.trim_end):
+            self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
         self._start_audio()
         self._playing = True
         self._stop.clear()
@@ -283,6 +300,11 @@ class PlaybackEngine:
             t.join(timeout=1)
         self._thread = None
 
+    def _finish_playback(self):
+        """Halt at the trim-out point (looping off) — stop audio, clear the flag."""
+        self._playing = False
+        self._kill_audio()
+
     def _run(self):
         cap = self._state.cap
         if cap is None:
@@ -295,7 +317,13 @@ class PlaybackEngine:
         while not self._stop.is_set():
             ret, frame = cap.read()
             if not ret:
-                # End of video — loop back to trim_start (restart audio too)
+                # End of file: loop back to trim_start, or stop if looping is off
+                if not self._loop:
+                    # Park on the trim-out frame so play() sees us at the end and
+                    # rewinds on the next press (EOF leaves current_frame one short).
+                    self._state.current_frame = self._state.time_to_frame(self._state.trim_end)
+                    self._finish_playback()
+                    break
                 self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, self._state.current_frame)
                 self._start_audio()
@@ -303,8 +331,12 @@ class PlaybackEngine:
 
             self._state.current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
 
-            # Loop at trim end (restart audio from trim_start so it loops with the video)
+            # Reached trim end: loop back to trim_start, or stop if looping is off
             if self._state.current_time >= self._state.trim_end:
+                if not self._loop:
+                    self._state.current_frame = self._state.time_to_frame(self._state.trim_end)
+                    self._finish_playback()
+                    break
                 self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, self._state.current_frame)
                 self._start_audio()
@@ -321,4 +353,7 @@ class PlaybackEngine:
             frame_delay = 1.0 / (self._state.fps * self._speed) if self._state.fps > 0 else 0.033
             time.sleep(frame_delay)
 
-        self._playing = False
+        # No trailing `self._playing = False` here: every exit path already clears
+        # it (pause/stop/_finish_playback). Re-clearing it after the loop could
+        # stomp a _playing=True set by a replay thread that started in the gap,
+        # leaving two threads on the non-thread-safe VideoCapture.
