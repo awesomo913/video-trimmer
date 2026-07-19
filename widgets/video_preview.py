@@ -177,11 +177,16 @@ class VideoPreview(ctk.CTkFrame):
     def _poll(self):
         if not self._polling:
             return
+        # Drain to the newest queued frame so the display never lags behind the
+        # wall-clock-paced engine (and thus behind the audio).
+        img = None
         try:
-            img = self._frame_queue.get_nowait()
-            self._show_frame(img)
+            while True:
+                img = self._frame_queue.get_nowait()
         except queue.Empty:
             pass
+        if img is not None:
+            self._show_frame(img)
         self._update_time_display()
         if self._on_frame_update and self._state.loaded:
             self._on_frame_update(self._state.current_frame)
@@ -189,7 +194,7 @@ class VideoPreview(ctk.CTkFrame):
         if self._engine is not None:
             icon = "⏸" if self._engine.playing else "▶"
             self._btn_play.configure(text=icon)
-        self.after(30, self._poll)
+        self.after(16, self._poll)
 
     def _show_frame(self, img: Image.Image):
         """Remember raw pixels, apply edits, scale to the label, and show."""
