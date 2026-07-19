@@ -185,6 +185,10 @@ class VideoPreview(ctk.CTkFrame):
         self._update_time_display()
         if self._on_frame_update and self._state.loaded:
             self._on_frame_update(self._state.current_frame)
+        # Engine can stop itself at trim-end (looping off) — keep the button in sync.
+        if self._engine is not None:
+            icon = "⏸" if self._engine.playing else "▶"
+            self._btn_play.configure(text=icon)
         self.after(30, self._poll)
 
     def _show_frame(self, img: Image.Image):
@@ -251,6 +255,15 @@ class VideoPreview(ctk.CTkFrame):
         if self._engine:
             self._engine.stop()
             self._engine = None
+
+    def clear(self):
+        """Unload the current video: stop playback, blank the display, show placeholder."""
+        self.stop()
+        self._photo = None
+        self._display.configure(image=None, text="")
+        self._time_label.configure(text="00:00.00 / 00:00.00")
+        self._btn_play.configure(text="▶")
+        self._placeholder.place(relx=0.5, rely=0.5, anchor="center")
 
     @property
     def engine(self) -> PlaybackEngine | None:

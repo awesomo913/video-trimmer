@@ -83,6 +83,7 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             on_open=self._open_file,
             on_export=self._open_export,
             on_snapshot=self._export_snapshot,
+            on_clear=self._clear_video,
         )
         self._toolbar.pack(fill="x", side="top")
 
@@ -216,6 +217,31 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._status.set_info(f"{meta.resolution} \u2022 {meta.size_str}")
 
         Toast(self, f"Opened {fname}", "success")
+
+    def _clear_video(self):
+        """Unload the current video and reset the UI to its empty state."""
+        if not self._state.loaded:
+            Toast(self, "No video loaded", "info")
+            return
+
+        # Tear down playback + release the OpenCV handle
+        self._preview.clear()
+        self._state.release()
+
+        # Fresh, empty state wired back into every widget
+        self._state = VideoState()
+        self._preview._state = self._state
+        self._timeline._state = self._state
+        self._timeline.clear()
+        self._trim_ctrl._state = self._state
+        self._trim_ctrl.update_display()
+        self._edit_ctrl.attach_state(self._state)
+
+        # Reset chrome
+        self._toolbar.clear_metadata()
+        self._status.set_status("Ready")
+        self._status.set_info("")
+        Toast(self, "Cleared", "info")
 
     # ── Playback controls ────────────────────────────────────────
 

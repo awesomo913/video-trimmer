@@ -136,11 +136,19 @@ python main.py
 - **Q: Can I cut OUT a section (keep the beginning and end, drop the middle)?** A: Not in v1.0.0. Only single-region trim. Planned for a future version.
 - **Q: Why is `Copy` mode sometimes slightly off on the cut point?** A: Stream copy can only cut at keyframes. If frame-accurate matters, use a quality preset (re-encodes).
 - **Q: Does it upload my video anywhere?** A: No. Everything runs locally via ffmpeg on your machine.
-- **Q: Can I drag-and-drop a file onto the window?** A: Not yet — the stub is there but needs `tkinterdnd2` installed.
+- **Q: Can I drag-and-drop a file onto the window?** A: Yes — drop a video file (or several) anywhere on the window to load it.
 
 ---
 
 ## 6. Changelog
+
+### 2026-07-19 — Clear button + non-looping playback
+- Added: **Clear** button in the top toolbar — unloads the current video and returns the window to its empty "open a file" state so you can start over without restarting the program.
+- Changed: Playback now **stops at your OUT point** instead of looping forever. Press Play again to replay the clip from the IN point.
+
+### 2026-07-18 — Drag-and-drop + quality pass
+- Added: Drag a video file (or several) onto the window to load it.
+- Fixed: 9-item quality pass — audio loops/trims correctly, no audio while scrubbing paused, Batch mode open no longer crashes, and more.
 
 ### 2026-04-21 — v1.2.0 — Batch Split mode
 - Added: **Batch mode** — toggle at top of window switches between Single (the original trimmer) and Batch Split
