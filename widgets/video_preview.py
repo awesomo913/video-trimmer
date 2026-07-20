@@ -264,11 +264,18 @@ class VideoPreview(ctk.CTkFrame):
     def clear(self):
         """Unload the current video: stop playback, blank the display, show placeholder."""
         self.stop()
-        self._photo = None
-        self._display.configure(image=None, text="")
+        self._last_raw_frame = None
         self._time_label.configure(text="00:00.00 / 00:00.00")
         self._btn_play.configure(text="▶")
-        self._placeholder.place(relx=0.5, rely=0.5, anchor="center")
+        # Cover the whole preview with the placeholder instead of doing
+        # self._display.configure(image=None): configuring a CTkLabel's image to
+        # None leaves a dangling Tk image reference, so the NEXT frame render
+        # raises TclError('image "pyimageN" doesn\'t exist'), which crashes the
+        # poll loop and leaves the reloaded video showing a permanent black
+        # screen. Keeping the old CTkImage referenced avoids that; the next
+        # attach_state() hides the placeholder and renders over it.
+        self._placeholder.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self._placeholder.lift()
 
     @property
     def engine(self) -> PlaybackEngine | None:
