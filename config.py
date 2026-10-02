@@ -1,8 +1,5 @@
 """App-wide constants: colors, fonts, paths, supported formats."""
 
-import os
-import shutil
-
 APP_NAME = "Video Trimmer"
 APP_VERSION = "1.2.0"
 
@@ -30,25 +27,6 @@ FONT_UI_BOLD = ("Segoe UI", 11, "bold")
 FONT_MONO = ("Consolas", 11)
 FONT_MONO_SMALL = ("Consolas", 10)
 FONT_TITLE = ("Segoe UI", 14, "bold")
-
-# ── FFmpeg ─────────────────────────────────────────────────────────
-_BUNDLED_FFMPEG_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "ffmpeg",
-    "ffmpeg-8.1-essentials_build", "bin",
-)
-
-def _find_binary(name: str) -> str:
-    bundled = os.path.join(_BUNDLED_FFMPEG_DIR, f"{name}.exe")
-    if os.path.isfile(bundled):
-        return bundled
-    found = shutil.which(name)
-    if found:
-        return found
-    return name  # hope it's on PATH at runtime
-
-FFMPEG_BIN = _find_binary("ffmpeg")
-FFPROBE_BIN = _find_binary("ffprobe")
-FFPLAY_BIN = _find_binary("ffplay")
 
 # ── Supported formats ─────────────────────────────────────────────
 VIDEO_EXTENSIONS = (

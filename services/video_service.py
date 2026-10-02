@@ -6,13 +6,14 @@ import logging
 import queue
 import subprocess
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import cv2
 from PIL import Image
 
-from config import THUMBNAIL_COUNT, THUMBNAIL_HEIGHT, FFPLAY_BIN
+from config import THUMBNAIL_COUNT, THUMBNAIL_HEIGHT
+from services.ffmpeg_locator import find_ffplay
 
 log = logging.getLogger(__name__)
 
@@ -106,6 +107,32 @@ def read_frame_at_time(state: VideoState, time_sec: float) -> Image.Image | None
     return read_frame_at(state, frame_num)
 
 
+def _collect_thumbnails(state: VideoState, count: int, height: int) -> list[Image.Image]:
+    """Decode `count` evenly spaced frames on a private capture (never the playback one)."""
+    thumbs: list[Image.Image] = []
+    if not state.loaded or state.frame_count < 2:
+        return thumbs
+    cap = cv2.VideoCapture(state.path)
+    if not cap.isOpened():
+        return thumbs
+    step = max(1, state.frame_count // count)
+    aspect = state.width / max(state.height, 1)
+    thumb_w = max(1, int(height * aspect))
+    try:
+        for i in range(count):
+            frame_num = min(i * step, state.frame_count - 1)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = cap.read()
+            if not ret:
+                thumbs.append(Image.new("RGB", (thumb_w, height), (20, 20, 30)))
+                continue
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            thumbs.append(Image.fromarray(rgb).resize((thumb_w, height), Image.LANCZOS))
+    finally:
+        cap.release()  # never leak the OS video handle, even on decode error
+    return thumbs
+
+
 def generate_thumbnails(
     state: VideoState,
     count: int = THUMBNAIL_COUNT,
@@ -115,36 +142,10 @@ def generate_thumbnails(
     """Generate evenly-spaced thumbnail images in a background thread."""
     def _worker():
         thumbs: list[Image.Image] = []
-        if not state.loaded or state.frame_count < 2:
-            if on_done:
-                on_done(thumbs)
-            return
-
-        # Use a separate capture so we don't interfere with playback
-        cap = cv2.VideoCapture(state.path)
-        if not cap.isOpened():
-            if on_done:
-                on_done(thumbs)
-            return
-
-        step = max(1, state.frame_count // count)
-        aspect = state.width / max(state.height, 1)
-        thumb_w = int(height * aspect)
-
         try:
-            for i in range(count):
-                frame_num = min(i * step, state.frame_count - 1)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-                ret, frame = cap.read()
-                if not ret:
-                    # Pad with a black frame
-                    thumbs.append(Image.new("RGB", (thumb_w, height), (20, 20, 30)))
-                    continue
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(rgb).resize((thumb_w, height), Image.LANCZOS)
-                thumbs.append(img)
-        finally:
-            cap.release()  # never leak the OS video handle, even on decode error
+            thumbs = _collect_thumbnails(state, count, height)
+        except (cv2.error, OSError, ValueError) as exc:
+            log.warning("thumbnail generation failed: %s", exc)
         if on_done:
             on_done(thumbs)
 
@@ -170,6 +171,7 @@ class PlaybackEngine:
         # Reentrant because _start_audio() calls _kill_audio() while holding it.
         self._audio_proc: subprocess.Popen | None = None
         self._audio_lock = threading.RLock()
+        self._warned_no_ffplay = False
 
     @property
     def playing(self) -> bool:
@@ -205,8 +207,15 @@ class PlaybackEngine:
             if self._speed != 1.0 or not self._state.path:
                 return
             self._kill_audio()
+            ffplay = find_ffplay()
+            if ffplay is None:
+                if not self._warned_no_ffplay:
+                    self._warned_no_ffplay = True
+                    log.info("ffplay not found: preview plays without sound "
+                             "(exports still keep the audio)")
+                return
             seek = max(0.0, self._state.current_time)
-            cmd = [FFPLAY_BIN, "-nodisp", "-autoexit", "-ss", str(seek)]
+            cmd = [ffplay, "-nodisp", "-autoexit", "-ss", str(seek)]
             # Bound audio to the trim-out point so it stops with the video; it is
             # restarted from trim_start each time the video loops (see _run).
             dur = self._state.trim_end - seek
@@ -218,9 +227,9 @@ class PlaybackEngine:
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
-            except Exception as exc:
+            except OSError as exc:
                 self._audio_proc = None
                 log.warning("ffplay failed to start (audio disabled): %s", exc)
 
@@ -231,7 +240,7 @@ class PlaybackEngine:
             try:
                 self._audio_proc.kill()
                 self._audio_proc.wait(timeout=1)
-            except Exception as exc:
+            except (OSError, subprocess.TimeoutExpired) as exc:
                 log.warning("failed to kill ffplay: %s", exc)
                 # Only drop the handle if the process is actually gone, else we'd
                 # orphan a still-playing ffplay we can never stop again.
@@ -260,7 +269,8 @@ class PlaybackEngine:
         # (frame_count/fps) while the last decodable frame sits at
         # (frame_count-1)/fps, so a float compare is always one frame short and
         # the rewind would never fire on the common end-of-file path.
-        if not self._loop and self._state.current_frame >= self._state.time_to_frame(self._state.trim_end):
+        end_frame = self._state.time_to_frame(self._state.trim_end)
+        if not self._loop and self._state.current_frame >= end_frame:
             self._state.current_frame = self._state.time_to_frame(self._state.trim_start)
         self._start_audio()
         self._playing = True

@@ -6,16 +6,23 @@ self.after(0, ...) on the main thread.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from config import (
-    VIDEO_EXTENSIONS, EXPORT_FORMATS, QUALITY_PRESETS,
-    SPLIT_OUTPUT_SUBFOLDER, BATCH_MIN_SEGMENT_SECONDS,
+    BATCH_MIN_SEGMENT_SECONDS,
+    EXPORT_FORMATS,
+    QUALITY_PRESETS,
+    SPLIT_OUTPUT_SUBFOLDER,
+    VIDEO_EXTENSIONS,
 )
-from services.ffmpeg_service import TrimJob, run_trim, get_metadata
+from services.ffmpeg_service import TrimJob, get_metadata, run_trim
+from services.fsutil import unique_path
+
+log = logging.getLogger(__name__)
 
 
 # ── Status constants ────────────────────────────────────────────────
@@ -116,7 +123,8 @@ def scan_folder(path: str) -> list[BatchFileEntry]:
             if entry.duration <= 0:
                 entry.meta_error = "zero or unknown duration"
                 entry.status = STATUS_UNREADABLE
-        except Exception as exc:
+        except (RuntimeError, OSError) as exc:  # includes FileNotFoundError, FFmpegNotFoundError
+            log.warning("cannot read %s: %s", item.path, exc)
             entry.meta_error = str(exc)[:200]
             entry.status = STATUS_UNREADABLE
         entries.append(entry)
@@ -135,6 +143,8 @@ def compute_segments(duration: float, config: SplitConfig) -> list[tuple[float, 
     if config.mode == "equal":
         n = max(1, int(config.n_parts))
         seg = duration / n
+        if seg < BATCH_MIN_SEGMENT_SECONDS:
+            return []  # parts would be shorter than a few frames
         segments: list[tuple[float, float]] = []
         for i in range(n):
             start = i * seg
@@ -154,6 +164,10 @@ def compute_segments(duration: float, config: SplitConfig) -> list[tuple[float, 
             end = min((i + 1) * chunk, duration)
             segments.append((start, end))
             i += 1
+        # A leftover sliver (e.g. 0.02 s) is too short to export: fold it into the last part.
+        if len(segments) > 1 and segments[-1][1] - segments[-1][0] < BATCH_MIN_SEGMENT_SECONDS:
+            sliver = segments.pop()
+            segments[-1] = (segments[-1][0], sliver[1])
         return segments
 
     return []
@@ -173,6 +187,96 @@ def build_output_path(
 
 # ── Runner ──────────────────────────────────────────────────────────
 
+def _run_segment(job: BatchSplitJob, entry: BatchFileEntry, idx: int, total: int,
+                 start: float, end: float, on_file_progress) -> TrimJob:
+    cfg = job.config
+    quality = cfg.quality
+    out_path = unique_path(build_output_path(entry, idx, total, job.output_folder, cfg.ext))
+    trim = TrimJob(
+        input_path=entry.path,
+        output_path=out_path,
+        start=start,
+        end=end,
+        copy_streams=quality["copy"],
+        crf=quality["crf"],
+        include_audio=cfg.include_audio,
+        video_filter=None,
+        source_duration=entry.duration,
+    )
+    job.current_trim = trim
+    done_event = threading.Event()
+
+    def _seg_progress(pct: float) -> None:
+        entry.progress = min(100.0, (idx / total) * 100.0 + pct / total)
+        if on_file_progress:
+            on_file_progress(entry)
+
+    # run_trim guarantees on_done runs on every path (invalid job, crash, cancel),
+    # so this wait cannot hang.
+    run_trim(trim, on_progress=_seg_progress, on_done=lambda _j: done_event.set())
+    while not done_event.wait(0.1):
+        if job.cancel_event.is_set():
+            trim.cancel_event.set()
+    return trim
+
+
+def _run_all(job: BatchSplitJob, on_file_start, on_file_progress, on_file_done) -> None:
+    try:
+        os.makedirs(job.output_folder, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(f"Cannot create output folder: {exc}") from exc
+
+    for entry in job.files:
+        if job.cancel_event.is_set():
+            break
+        if entry.status == STATUS_UNREADABLE:
+            continue
+
+        segments = compute_segments(entry.duration, job.config)
+        entry.parts_total = len(segments)
+        if not segments:
+            entry.status = STATUS_SKIPPED
+            entry.error = "shorter than chunk size"
+            if on_file_done:
+                on_file_done(entry)
+            continue
+
+        entry.status = STATUS_RUNNING
+        entry.parts_done = 0
+        entry.progress = 0.0
+        if on_file_start:
+            on_file_start(entry)
+
+        file_failed = False
+        for idx, (start, end) in enumerate(segments):
+            if job.cancel_event.is_set():
+                break
+            trim = _run_segment(job, entry, idx, len(segments), start, end, on_file_progress)
+            if trim.error and "cancel" not in trim.error.lower():
+                entry.error = f"part {idx + 1} of {len(segments)}: {trim.error}"[:200]
+                log.error("batch: %s failed: %s", entry.path, entry.error)
+                file_failed = True
+                break  # remaining parts of THIS file are pointless; the next file still runs
+            if job.cancel_event.is_set():
+                break
+            entry.parts_done += 1
+
+        job.current_trim = None
+
+        if job.cancel_event.is_set():
+            entry.status = STATUS_FAILED if file_failed else STATUS_PENDING
+            entry.error = entry.error or "cancelled"
+            if on_file_done:
+                on_file_done(entry)
+            break
+
+        entry.status = STATUS_FAILED if file_failed else STATUS_DONE
+        if not file_failed:
+            entry.progress = 100.0
+        if on_file_done:
+            on_file_done(entry)
+
+
 def run_batch(
     job: BatchSplitJob,
     on_file_start: Callable[[BatchFileEntry], None] | None = None,
@@ -188,117 +292,14 @@ def run_batch(
 
     def _worker() -> None:
         try:
-            os.makedirs(job.output_folder, exist_ok=True)
-        except OSError as exc:
+            _run_all(job, on_file_start, on_file_progress, on_file_done)
+        except Exception as exc:  # last line of defence: the UI must always hear back
+            log.exception("batch crashed")
             if on_batch_done:
-                on_batch_done(job, f"Cannot create output folder: {exc}")
+                on_batch_done(job, f"Unexpected error: {exc}")
             return
-
-        cfg = job.config
-        ext = cfg.ext
-        quality = cfg.quality
-
-        for entry in job.files:
-            if job.cancel_event.is_set():
-                break
-
-            if entry.status == STATUS_UNREADABLE:
-                continue
-
-            segments = compute_segments(entry.duration, cfg)
-            entry.parts_total = len(segments)
-
-            if not segments:
-                entry.status = STATUS_SKIPPED
-                entry.error = "shorter than chunk size"
-                if on_file_done:
-                    on_file_done(entry)
-                continue
-
-            entry.status = STATUS_RUNNING
-            entry.parts_done = 0
-            entry.progress = 0.0
-            if on_file_start:
-                on_file_start(entry)
-
-            file_failed = False
-            for idx, (start, end) in enumerate(segments):
-                if job.cancel_event.is_set():
-                    break
-
-                out_path = build_output_path(
-                    entry, idx, len(segments), job.output_folder, ext,
-                )
-
-                trim = TrimJob(
-                    input_path=entry.path,
-                    output_path=out_path,
-                    start=start,
-                    end=end,
-                    copy_streams=quality["copy"],
-                    crf=quality["crf"],
-                    include_audio=cfg.include_audio,
-                    video_filter=None,
-                )
-                job.current_trim = trim
-
-                done_event = threading.Event()
-
-                def _seg_progress(pct: float, _entry=entry, _idx=idx,
-                                  _total=len(segments)) -> None:
-                    base = (_idx / _total) * 100.0
-                    seg_share = (pct / _total)
-                    _entry.progress = min(100.0, base + seg_share)
-                    if on_file_progress:
-                        on_file_progress(_entry)
-
-                def _seg_done(_job: TrimJob, _ev=done_event) -> None:
-                    _ev.set()
-
-                run_trim(trim, on_progress=_seg_progress, on_done=_seg_done)
-
-                # Wait for this segment to complete (or cancel).
-                # NOTE: this loop has no timeout — it depends on `run_trim`'s
-                # try/finally guarantee that `on_done` (→ done_event.set()) is
-                # ALWAYS called, even on subprocess crash. If ffmpeg_service.py
-                # is ever refactored to skip on_done on some path, this will
-                # spin forever. Keep that contract intact.
-                while not done_event.wait(0.1):
-                    if job.cancel_event.is_set():
-                        trim.cancel_event.set()
-
-                if trim.error and "cancel" not in trim.error.lower():
-                    entry.error = trim.error[:200]
-                    file_failed = True
-                    break
-
-                if job.cancel_event.is_set():
-                    break
-
-                entry.parts_done += 1
-
-            job.current_trim = None
-
-            if job.cancel_event.is_set():
-                # Mark in-progress file back to pending? No — leave partial.
-                # Just stop the loop. Per-file status stays "running" so
-                # the UI can show "interrupted".
-                entry.status = STATUS_FAILED if file_failed else STATUS_PENDING
-                entry.error = entry.error or "cancelled"
-                if on_file_done:
-                    on_file_done(entry)
-                break
-
-            entry.status = STATUS_FAILED if file_failed else STATUS_DONE
-            entry.progress = 100.0 if not file_failed else entry.progress
-            if on_file_done:
-                on_file_done(entry)
-
         if on_batch_done:
-            if job.cancel_event.is_set():
-                on_batch_done(job, "cancelled")
-            else:
-                on_batch_done(job, "")
+            on_batch_done(job, "cancelled" if job.cancel_event.is_set() else "")
 
     threading.Thread(target=_worker, daemon=True).start()
 
