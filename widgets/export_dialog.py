@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
+import logging
 import os
-from tkinter import filedialog
-from typing import Callable
+from collections.abc import Callable
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
 from config import (
-    COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD, FONT_MONO,
-    EXPORT_FORMATS, QUALITY_PRESETS,
+    COLORS,
+    EXPORT_FORMATS,
+    FONT_MONO,
+    FONT_UI,
+    FONT_UI_BOLD,
+    FONT_UI_SMALL,
+    QUALITY_PRESETS,
 )
 from services.edit_transforms import edits_active, ffmpeg_vf_chain
-from services.ffmpeg_service import TrimJob, run_trim, format_time
+from services.ffmpeg_service import TrimJob, format_time, run_trim
+from services.fsutil import same_file, unique_path
+from services.ui_bridge import MainThreadDispatcher
 from services.video_service import VideoState
+
+log = logging.getLogger(__name__)
 
 
 class ExportDialog(ctk.CTkToplevel):
@@ -28,6 +38,9 @@ class ExportDialog(ctk.CTkToplevel):
         self._on_done = on_done
         self._on_error = on_error
         self._job: TrimJob | None = None
+        self._bridge = MainThreadDispatcher(self.after, self.winfo_exists)
+        self._bridge.start()
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
 
         self.title("Export Trimmed Video")
         self.geometry("480x460")
@@ -156,12 +169,16 @@ class ExportDialog(ctk.CTkToplevel):
         fmt = EXPORT_FORMATS[fmt_key]
         ext = fmt["ext"]
 
+        src_dir = os.path.dirname(self._state.path)
         src_name = os.path.splitext(os.path.basename(self._state.path))[0]
-        default_name = f"{src_name}_trimmed{ext}"
+        # Suggest a name that does not exist yet, so Save never lands on an old export.
+        suggested = os.path.join(src_dir, f"{src_name}_trimmed{ext}")
+        default_name = os.path.basename(unique_path(suggested))
 
         output_path = filedialog.asksaveasfilename(
             parent=self,
             title="Save Trimmed Video",
+            initialdir=src_dir or None,
             initialfile=default_name,
             defaultextension=ext,
             filetypes=[(fmt_key.strip(), f"*{ext}"), ("All Files", "*.*")],
@@ -170,8 +187,7 @@ class ExportDialog(ctk.CTkToplevel):
             return
 
         # Never let the export overwrite the source file being trimmed.
-        if os.path.abspath(output_path) == os.path.abspath(self._state.path):
-            from tkinter import messagebox
+        if same_file(output_path, self._state.path):
             messagebox.showwarning(
                 "Invalid destination",
                 "Pick a different file — you can't export over the video you're trimming.",
@@ -191,6 +207,7 @@ class ExportDialog(ctk.CTkToplevel):
             crf=quality["crf"],
             include_audio=self._audio_var.get(),
             video_filter=vf,
+            source_duration=self._state.duration,
         )
 
         self._btn_export.configure(state="disabled")
@@ -198,8 +215,8 @@ class ExportDialog(ctk.CTkToplevel):
 
         run_trim(
             self._job,
-            on_progress=lambda p: self.after(0, self._update_progress, p),
-            on_done=lambda j: self.after(0, self._on_export_done, j),
+            on_progress=lambda p: self._bridge.post(self._update_progress, p),
+            on_done=lambda j: self._bridge.post(self._on_export_done, j),
         )
 
     def _update_progress(self, pct: float):
@@ -208,7 +225,11 @@ class ExportDialog(ctk.CTkToplevel):
 
     def _on_export_done(self, job: TrimJob):
         self._btn_export.configure(state="normal")
+        if job.error == "Cancelled":
+            self._close()
+            return
         if job.error:
+            log.warning("export failed: %s", job.error)
             self._progress_label.configure(
                 text=f"Failed: {job.error}", text_color=COLORS["error"],
             )
@@ -221,11 +242,16 @@ class ExportDialog(ctk.CTkToplevel):
             )
             if self._on_done:
                 self._on_done(job.output_path)
-            self.after(1500, self.destroy)
+            self.after(1500, self._close)
 
     def _cancel(self):
         if self._job and not self._job.done:
             self._job.cancel_event.set()
             self._progress_label.configure(text="Cancelling...")
         else:
+            self._close()
+
+    def _close(self):
+        self._bridge.close()
+        if self.winfo_exists():
             self.destroy()

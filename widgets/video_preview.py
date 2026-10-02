@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import queue
-from typing import Callable
+from collections.abc import Callable
 
 import customtkinter as ctk
 from PIL import Image
 
-from config import COLORS, FONT_UI, FONT_MONO
+from config import COLORS, FONT_MONO, FONT_UI
 from services.edit_transforms import apply_pil_transforms
-from services.video_service import VideoState, PlaybackEngine, read_frame_at
+from services.video_service import PlaybackEngine, VideoState, read_frame_at
 
 
 class VideoPreview(ctk.CTkFrame):

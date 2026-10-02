@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_UI, FONT_UI_SMALL, FONT_MONO, FONT_UI_BOLD
+from config import COLORS, FONT_MONO, FONT_UI_BOLD, FONT_UI_SMALL
 from services.ffmpeg_service import format_time, parse_time
 from services.video_service import VideoState
 

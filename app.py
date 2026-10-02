@@ -2,32 +2,40 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
+import tkinter as tk
 from tkinter import filedialog
 
 import customtkinter as ctk
+import cv2
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-log = logging.getLogger(__name__)
-
 from config import (
-    APP_NAME, APP_VERSION, COLORS, VIDEO_EXTENSIONS,
-    WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_MIN_W, WINDOW_MIN_H,
+    APP_NAME,
+    APP_VERSION,
+    COLORS,
+    VIDEO_EXTENSIONS,
+    WINDOW_HEIGHT,
+    WINDOW_MIN_H,
+    WINDOW_MIN_W,
+    WINDOW_WIDTH,
 )
-from services.ffmpeg_service import get_metadata, format_time
+from services.ffmpeg_service import format_time, get_metadata
 from services.video_service import VideoState, open_video
-
-from widgets.toolbar import Toolbar
-from widgets.status_bar import StatusBar
-from widgets.toast import Toast
-from widgets.video_preview import VideoPreview
-from widgets.timeline import Timeline
-from widgets.trim_controls import TrimControls
-from widgets.export_dialog import ExportDialog
-from widgets.edit_controls import EditControls
-from widgets.mode_switcher import ModeSwitcher
 from widgets.batch_panel import BatchPanel
+from widgets.edit_controls import EditControls
+from widgets.export_dialog import ExportDialog
+from widgets.mode_switcher import ModeSwitcher
+from widgets.status_bar import StatusBar
+from widgets.timeline import Timeline
+from widgets.toast import Toast
+from widgets.toolbar import Toolbar
+from widgets.trim_controls import TrimControls
+from widgets.video_preview import VideoPreview
+
+log = logging.getLogger(__name__)
 
 
 class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
@@ -41,7 +49,7 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # on a CustomTkinter root (which isn't a TkinterDnD.Tk by default).
         try:
             self.TkdndVersion = TkinterDnD._require(self)
-        except Exception as exc:
+        except (tk.TclError, RuntimeError) as exc:
             self.TkdndVersion = None
             log.warning("tkdnd init failed, drag-and-drop disabled: %s", exc)
 
@@ -55,10 +63,9 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
         # Try to set HiDPI awareness on Windows
         try:
-            import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
-            pass
+        except (AttributeError, OSError) as exc:  # not Windows, or already set
+            log.debug("DPI awareness not set: %s", exc)
 
         # ── State ────────────────────────────────────────────────
         self._state = VideoState()
@@ -144,14 +151,14 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         try:
             self.drop_target_register(DND_FILES)
             self.dnd_bind("<<Drop>>", self._on_drop)
-        except Exception as exc:
+        except (tk.TclError, RuntimeError) as exc:
             log.warning("drag-and-drop registration failed: %s", exc)
 
     def _on_drop(self, event):
         # event.data is a Tk list string, e.g. "{C:/a b.mp4} {C:/c.mp4}"
         try:
             paths = list(self.tk.splitlist(event.data))
-        except Exception:
+        except tk.TclError:
             paths = [str(event.data).strip().strip("{}")]
         vids = [
             p for p in paths
@@ -163,10 +170,7 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # DnD targets the single-file trim flow; flip out of batch mode if needed.
         if self._mode != "single":
             if hasattr(self._mode_switcher, "set_mode"):
-                try:
-                    self._mode_switcher.set_mode("single")
-                except Exception as exc:
-                    log.warning("mode switch on drop failed: %s", exc)
+                self._mode_switcher.set_mode("single")
             self._on_mode_change("single")
         self._load_video(vids[0])
         if len(vids) > 1:
@@ -193,7 +197,10 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         try:
             self._state = open_video(path)
             meta = get_metadata(path)
-        except Exception as exc:
+        except (RuntimeError, OSError, cv2.error) as exc:
+            log.warning("failed to open %s: %s", path, exc)
+            self._state.release()
+            self._state = VideoState()
             Toast(self, f"Failed to open: {exc}", "error")
             self._status.set_status("Ready")
             return
@@ -317,17 +324,10 @@ class VideoTrimmerApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def _enter_batch_mode(self) -> None:
         # Pause playback if running
-        if self._preview is not None:
-            try:
-                self._preview.pause()
-            except Exception:
-                pass
+        self._preview.pause()
         # Hide single-mode widgets
         for w in (self._preview, self._timeline, self._trim_ctrl, self._edit_ctrl):
-            try:
-                w.pack_forget()
-            except Exception:
-                pass
+            w.pack_forget()
         # Lazy-instantiate batch panel
         if self._batch_panel is None:
             self._batch_panel = BatchPanel(self)

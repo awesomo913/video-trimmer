@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD
+from config import COLORS, FONT_UI, FONT_UI_BOLD, FONT_UI_SMALL
 from services.video_service import VideoState
 
 
@@ -128,9 +128,9 @@ class EditControls(ctk.CTkFrame):
     ) -> ctk.CTkSlider:
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", pady=2)
-        ctk.CTkLabel(row, text=label, width=14, font=FONT_UI_SMALL, text_color=COLORS["text_dim"]).pack(
-            side="left"
-        )
+        ctk.CTkLabel(
+            row, text=label, width=14, font=FONT_UI_SMALL, text_color=COLORS["text_dim"]
+        ).pack(side="left")
         sl = ctk.CTkSlider(
             row,
             from_=0,
@@ -204,7 +204,4 @@ class EditControls(ctk.CTkFrame):
         enabled = self._crop_var.get() and self._state.loaded
         state_sl = "normal" if enabled else "disabled"
         for sl in (self._sl_left, self._sl_top, self._sl_right, self._sl_bottom):
-            try:
-                sl.configure(state=state_sl)
-            except Exception:
-                pass
+            sl.configure(state=state_sl)

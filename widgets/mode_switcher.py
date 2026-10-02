@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import customtkinter as ctk
 
@@ -46,6 +46,11 @@ class ModeSwitcher(ctk.CTkFrame):
         self._mode = mode
         self._refresh_buttons()
         self._on_mode_change(mode)
+
+    def set_mode(self, mode: str) -> None:
+        """Change the highlighted button without firing the mode-change callback."""
+        self._mode = mode
+        self._refresh_buttons()
 
     def _refresh_buttons(self) -> None:
         if self._mode == "single":

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_TITLE, FONT_UI, FONT_UI_SMALL, FONT_MONO_SMALL, APP_NAME
+from config import APP_NAME, COLORS, FONT_MONO_SMALL, FONT_TITLE, FONT_UI
 
 
 class Toolbar(ctk.CTkFrame):

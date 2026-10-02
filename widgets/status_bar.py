@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_UI_SMALL, FONT_MONO_SMALL
+from config import COLORS, FONT_MONO_SMALL, FONT_UI_SMALL
 
 
 class StatusBar(ctk.CTkFrame):

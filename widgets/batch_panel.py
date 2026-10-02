@@ -10,22 +10,32 @@ Layout (top to bottom):
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from tkinter import filedialog
-from typing import Callable
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD, FONT_MONO
+from config import COLORS, FONT_MONO, FONT_UI, FONT_UI_BOLD, FONT_UI_SMALL
 from services.batch_split_service import (
-    BatchFileEntry, BatchSplitJob, ScanError,
-    scan_folder, run_batch, default_output_folder,
-    STATUS_RUNNING, STATUS_DONE, STATUS_FAILED, STATUS_SKIPPED,
+    STATUS_DONE,
+    STATUS_FAILED,
+    STATUS_RUNNING,
+    STATUS_SKIPPED,
+    BatchFileEntry,
+    BatchSplitJob,
+    ScanError,
+    default_output_folder,
+    run_batch,
+    scan_folder,
 )
+from services.ui_bridge import MainThreadDispatcher
 from widgets.batch_file_row import BatchFileRow
 from widgets.split_config_panel import SplitConfigPanel
 from widgets.toast import Toast
+
+log = logging.getLogger(__name__)
 
 
 def _truncate_path(path: str, n: int = 70) -> str:
@@ -48,6 +58,8 @@ class BatchPanel(ctk.CTkFrame):
         self._running = False
 
         self._build_ui()
+        self._bridge = MainThreadDispatcher(self.after, self.winfo_exists)
+        self._bridge.start()
 
     # ── UI construction ─────────────────────────────────────────
 
@@ -168,9 +180,12 @@ class BatchPanel(ctk.CTkFrame):
     def _scan_worker(self, path: str) -> None:
         try:
             entries = scan_folder(path)
-            self.after(0, self._on_scan_done, entries, "")
+            self._bridge.post(self._on_scan_done, entries, "")
         except ScanError as exc:
-            self.after(0, self._on_scan_done, [], str(exc))
+            self._bridge.post(self._on_scan_done, [], str(exc))
+        except Exception as exc:  # never leave the panel stuck on "Scanning..."
+            log.exception("folder scan crashed")
+            self._bridge.post(self._on_scan_done, [], f"unexpected error: {exc}")
 
     def _on_scan_done(self, entries: list[BatchFileEntry], error: str) -> None:
         self._scanning = False
@@ -248,10 +263,10 @@ class BatchPanel(ctk.CTkFrame):
 
         run_batch(
             self._job,
-            on_file_start=lambda e: self.after(0, self._on_file_start, e),
-            on_file_progress=lambda e: self.after(0, self._on_file_progress, e),
-            on_file_done=lambda e: self.after(0, self._on_file_done, e),
-            on_batch_done=lambda j, err: self.after(0, self._on_batch_done, j, err),
+            on_file_start=lambda e: self._bridge.post(self._on_file_start, e),
+            on_file_progress=lambda e: self._bridge.post(self._on_file_progress, e),
+            on_file_done=lambda e: self._bridge.post(self._on_file_done, e),
+            on_batch_done=lambda j, err: self._bridge.post(self._on_batch_done, j, err),
         )
 
     def _cancel(self) -> None:
@@ -317,17 +332,22 @@ class BatchPanel(ctk.CTkFrame):
             summary = f"Done — {n_done}/{n_total}"
             if n_failed:
                 summary += f", {n_failed} failed"
+                failed = [f"{e.name} ({e.error})" for e in job.files if e.status == STATUS_FAILED]
+                Toast(self, "Failed: " + "; ".join(failed)[:300], "error")
             if n_skipped:
                 summary += f", {n_skipped} skipped"
             self._overall_label.configure(
-                text=summary, text_color=COLORS["success"],
+                text=summary,
+                text_color=COLORS["warning"] if n_failed else COLORS["success"],
             )
             try:
                 os.startfile(job.output_folder)  # nosec - opens explorer to results
             except OSError as exc:
                 # Best-effort — batch already succeeded, just couldn't open Explorer
                 Toast(self, f"Outputs ready but couldn't open folder: {exc}", "warning")
-            Toast(self, f"Batch complete — outputs in {os.path.basename(job.output_folder)}/", "success")
+            if not n_failed:
+                folder = os.path.basename(job.output_folder)
+                Toast(self, f"Batch complete — outputs in {folder}/", "success")
 
     # ── Overall progress ────────────────────────────────────────
 
@@ -355,7 +375,8 @@ class BatchPanel(ctk.CTkFrame):
         current = next((e for e in self._job.files if e.status == STATUS_RUNNING), None)
         if current:
             self._overall_label.configure(
-                text=f"{int(pct * 100)}%  —  {current.name}  ({current.parts_done}/{current.parts_total})",
+                text=(f"{int(pct * 100)}%  —  {current.name}  "
+                      f"({current.parts_done}/{current.parts_total})"),
                 text_color=COLORS["accent"],
             )
 

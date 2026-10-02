@@ -5,10 +5,17 @@ from __future__ import annotations
 import customtkinter as ctk
 
 from config import (
-    COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD, FONT_MONO,
-    EXPORT_FORMATS, QUALITY_PRESETS,
-    SPLIT_PRESETS, SPLIT_N_MIN, SPLIT_N_MAX,
+    COLORS,
+    EXPORT_FORMATS,
+    FONT_MONO,
+    FONT_UI,
+    FONT_UI_BOLD,
+    FONT_UI_SMALL,
+    QUALITY_PRESETS,
     SPLIT_DEFAULT_CHUNK_SECONDS,
+    SPLIT_N_MAX,
+    SPLIT_N_MIN,
+    SPLIT_PRESETS,
 )
 from services.batch_split_service import SplitConfig
 
@@ -201,7 +208,7 @@ class SplitConfigPanel(ctk.CTkFrame):
 
     def _highlight_preset(self) -> None:
         active_n = self._n_var.get()
-        for btn, n in zip(self._preset_buttons, SPLIT_PRESETS):
+        for btn, n in zip(self._preset_buttons, SPLIT_PRESETS, strict=False):
             if n == active_n:
                 btn.configure(fg_color=COLORS["accent"])
             else:

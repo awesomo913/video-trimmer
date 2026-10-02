@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
-from config import COLORS, FONT_UI_SMALL, FONT_MONO_SMALL
+from config import COLORS, FONT_MONO_SMALL, FONT_UI_SMALL
 from services.batch_split_service import (
+    STATUS_DONE,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_RUNNING,
+    STATUS_SKIPPED,
+    STATUS_UNREADABLE,
     BatchFileEntry,
-    STATUS_PENDING, STATUS_RUNNING, STATUS_DONE,
-    STATUS_SKIPPED, STATUS_FAILED, STATUS_UNREADABLE,
 )
 from services.ffmpeg_service import format_time
-
 
 _STATUS_COLORS = {
     STATUS_PENDING:    COLORS["text_dim"],
@@ -63,7 +66,9 @@ class BatchFileRow(ctk.CTkFrame):
         self._dur_label.pack(side="left", padx=4)
 
         # Status badge (right)
-        status = entry.status if entry.status != STATUS_PENDING or not entry.meta_error else STATUS_UNREADABLE
+        status = entry.status
+        if status == STATUS_PENDING and entry.meta_error:
+            status = STATUS_UNREADABLE
         self._status_label = ctk.CTkLabel(
             self, text=_STATUS_TEXT.get(status, status),
             font=FONT_UI_SMALL, text_color=_STATUS_COLORS.get(status, COLORS["text"]),

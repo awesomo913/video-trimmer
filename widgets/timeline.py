@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import Callable
+from collections.abc import Callable
 
 from PIL import Image, ImageTk
 
-from config import COLORS, TIMELINE_HEIGHT, THUMBNAIL_HEIGHT, FONT_MONO_SMALL
+from config import COLORS, FONT_MONO_SMALL, THUMBNAIL_HEIGHT, TIMELINE_HEIGHT
+from services.ui_bridge import MainThreadDispatcher
 from services.video_service import VideoState, generate_thumbnails
 
 
@@ -30,6 +31,7 @@ class Timeline(tk.Frame):
         self._thumb_photos: list[ImageTk.PhotoImage] = []
         self._thumb_width = 0
         self._dragging: str | None = None  # "in", "out", or None
+        self._thumb_token = 0  # bumps on every load so late thumbnails of an old video are dropped
 
         # ── Canvas ───────────────────────────────────────────────
         self._canvas = tk.Canvas(
@@ -38,6 +40,8 @@ class Timeline(tk.Frame):
             cursor="hand2",
         )
         self._canvas.pack(fill="both", expand=True)
+        self._bridge = MainThreadDispatcher(self._canvas.after, self._canvas.winfo_exists)
+        self._bridge.start()
 
         # Bind events
         self._canvas.bind("<Configure>", self._on_resize)
@@ -64,6 +68,7 @@ class Timeline(tk.Frame):
 
     def clear(self):
         """Wipe the timeline canvas back to empty (no video loaded)."""
+        self._thumb_token += 1  # drop thumbnails still being generated
         self._canvas.delete("all")
         self._thumb_photos.clear()
         self._thumb_ids.clear()
@@ -73,13 +78,15 @@ class Timeline(tk.Frame):
         self._playhead_id = None
 
     def _generate_thumbs(self):
+        self._thumb_token += 1
+        token = self._thumb_token
         generate_thumbnails(
             self._state,
-            on_done=lambda thumbs: self._canvas.after(0, self._on_thumbs_ready, thumbs),
+            on_done=lambda thumbs: self._bridge.post(self._on_thumbs_ready, thumbs, token),
         )
 
-    def _on_thumbs_ready(self, thumbs: list[Image.Image]):
-        if not thumbs:
+    def _on_thumbs_ready(self, thumbs: list[Image.Image], token: int):
+        if not thumbs or token != self._thumb_token:
             return
         self._canvas.delete("all")
         self._thumb_photos.clear()

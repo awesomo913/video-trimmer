@@ -1,31 +1,25 @@
 """Video Trimmer — entry point."""
 
-import sys
+import logging
 import os
-from pathlib import Path
+import sys
 
 # Ensure package imports work when run as `python main.py`
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Install shared crash logger (per workspace Crash Log Rule)
-_SCRIPTS = Path.home() / ".claude" / "scripts"
-if _SCRIPTS.exists():
-    sys.path.insert(0, str(_SCRIPTS))
-    try:
-        from crash_logger import install, log_event  # noqa: E402
-        install(project_root=Path(__file__).parent)
-    except Exception:
-        def log_event(*_a, **_kw):  # no-op fallback
-            pass
-else:
-    def log_event(*_a, **_kw):
-        pass
+from services.applog import install_excepthooks, setup_logging  # noqa: E402
 
-from app import VideoTrimmerApp  # noqa: E402
+log = logging.getLogger("video_trimmer")
 
 
-def main():
-    log_event("info", "session_start", {"app": "video_trimmer"})
+def main() -> None:
+    log_path = setup_logging()
+    install_excepthooks()
+    log.info("session start (log: %s)", log_path)
+
+    # Imported after logging is set up so import-time problems are recorded too.
+    from app import VideoTrimmerApp
+
     app = VideoTrimmerApp()
     app.mainloop()
 
