@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Video Trimmer: cut the part you want, fast, offline, free." width="100%">
+</p>
+
 # Video Trimmer
 
 **Cut the part you want out of any video: fast, offline, free.**
@@ -37,6 +41,10 @@ Open a video, drag two handles on a thumbnail timeline to mark where the clip st
 
 ## How it works
 
+<p align="center">
+  <img src="docs/assets/how-it-works.svg" alt="Three steps: open a video and a thumbnail timeline appears; drag the orange IN and OUT handles; save the clip by fast stream copy, or re-encode to change format. Everything runs on your PC." width="100%">
+</p>
+
 1. **Preview** uses OpenCV, which can jump to any frame quickly, so the timeline and playhead feel immediate.
 2. **Export** hands the cut to ffmpeg. With "Copy" quality it copies the video and audio as they are. With a quality preset (CRF 18 to 35) it re-encodes.
 3. Crop, rotate and flip are applied on export (this forces a re-encode of the picture; the audio can still be copied).
@@ -58,6 +66,10 @@ Open a video, drag two handles on a thumbnail timeline to mark where the clip st
 ## Comparison
 
 Video Trimmer is a trimmer, not an editor. Prices are the cheapest individual plan that covers cutting video, read from each vendor's official page. **Checked 2026-10-02.**
+
+<p align="center">
+  <img src="docs/assets/cost-compare.png" alt="Bar chart of yearly cost: Video Trimmer, LosslessCut and Clipchamp free tier are $0; Premiere Elements $33.33, Filmora $49.99, Movavi $69.95, Adobe Premiere $275.88 per year. Checked 2026-10-02." width="100%">
+</p>
 
 | Product | Plan | Price | Source |
 |---|---|---|---|

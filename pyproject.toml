@@ -12,6 +12,9 @@ exclude = ["build", "dist", ".venv", ".venv-build", ".claude"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+"scripts/make_readme_visuals.py" = ["E501"]  # long inline SVG attribute strings
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
