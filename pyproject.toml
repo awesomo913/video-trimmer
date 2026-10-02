@@ -1,0 +1,19 @@
+[project]
+name = "video-trimmer"
+version = "1.3.0"
+description = "Cut the part you want out of any video: fast, offline, free."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["build", "dist", ".venv", ".venv-build", ".claude"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ffmpeg: runs the real bundled ffmpeg on a tiny generated clip (also runs on CI)",
+]
