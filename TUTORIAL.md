@@ -41,7 +41,7 @@ python main.py
   - `Shift + Left` / `Shift + Right` — jump 5 seconds
   - Speed dropdown (bottom-right of preview): 0.25x to 2.0x
 - **Example:** Press Space to play, hit `Right` three times to scrub 3 frames forward, hit Space again to pause.
-- **Gotchas:** Playback loops from trim end back to trim start, so if you set trim points the preview auto-loops your clip.
+- **Gotchas:** Playback stops at your OUT point (press Space to replay from IN). Preview sound needs `ffplay` on your PATH; without it the preview is silent, but exports keep the audio.
 
 ### Set trim points
 - **What it does:** Pick the start (IN) and end (OUT) of your exported clip.
@@ -120,12 +120,12 @@ python main.py
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | Window opens then closes immediately | Missing Python dep | `uv pip install -r requirements.txt` |
-| "Failed to open: ..." toast | Corrupt/unsupported file | Try a different file, or check `ffprobe file.mp4` manually |
+| "Failed to open: ..." toast | Corrupt/unsupported file | Try a different file; the message includes what ffmpeg said, and the log (see README FAQ) has more |
 | Preview is black, no frames | Unusual codec OpenCV can't decode | File will still export fine via ffmpeg — the preview is just blind to it |
 | Export fails with "codec not found" | Picked `Copy` with an incompatible container | Switch quality to `Medium (CRF 23)` — it'll re-encode |
 | Thumbnails don't appear | Still generating (background thread) | Wait 1-2 seconds |
-| App won't start, `ModuleNotFoundError` | CustomTkinter not installed | `uv pip install customtkinter opencv-python pillow` |
-| ffmpeg not found error | Bundled path broken | Check `%USERPROFILE%\Desktop\AI\ffmpeg\ffmpeg-8.1-essentials_build\bin\` exists, or install ffmpeg to system PATH |
+| App won't start, `ModuleNotFoundError` | CustomTkinter not installed | `uv pip install -r requirements.txt` |
+| "ffmpeg was not found" error | A damaged install or a source checkout without dependencies | Reinstall the release exe, or run `uv pip install -r requirements.txt` (ffmpeg comes with the `imageio-ffmpeg` package) |
 
 ---
 
@@ -135,12 +135,12 @@ python main.py
 - **Q: Does it modify my original file?** A: No, never. Exports always write a new file.
 - **Q: Can I cut OUT a section (keep the beginning and end, drop the middle)?** A: Not in v1.0.0. Only single-region trim. Planned for a future version.
 - **Q: Why is `Copy` mode sometimes slightly off on the cut point?** A: Stream copy can only cut at keyframes. If frame-accurate matters, use a quality preset (re-encodes).
-- **Q: Does it upload my video anywhere?** A: No. Everything runs locally via ffmpeg on your machine.
+- **Q: Does it upload my video anywhere?** A: No. Everything runs locally on your machine.
 - **Q: Can I drag-and-drop a file onto the window?** A: Yes — drop a video file (or several) anywhere on the window to load it.
 
 ---
 
-## 6. Changelog
+## 6. Version history
 
 ### 2026-07-19 — Clear button + non-looping playback
 - Added: **Clear** button in the top toolbar — unloads the current video and returns the window to its empty "open a file" state so you can start over without restarting the program.
@@ -174,4 +174,4 @@ python main.py
 - Added: Progress bar during export with cancel support
 - Added: Keyboard shortcuts: Space, arrows, Shift+arrows, `[`, `]`, Ctrl+O, Ctrl+E
 - Added: Toast notifications for success/error/info feedback
-- Added: Crash logger integration writes to `logs/crash_*.log` on uncaught errors
+- Added: Error log file

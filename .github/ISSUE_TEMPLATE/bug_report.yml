@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working right
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more detail you give, the faster it can get fixed.
+        The log file (see the README FAQ, "where's the log?") usually has the answer; please paste the last few lines.
+
+  - type: input
+    id: os-version
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+
+  - type: input
+    id: vt-version
+    attributes:
+      label: Video Trimmer version
+      description: The release you downloaded, or the commit if you run from source
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which part of the app?
+      options:
+        - Single file (open, trim, export)
+        - Batch split
+        - Preview / playback
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: source-format
+    attributes:
+      label: Video format (if you know it)
+      description: e.g. phone .mp4 (H.264), .mkv (HEVC), .mov
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: The last lines of app.log. Redact file names if you want to keep them private.
+      render: text
+    validations:
+      required: false
