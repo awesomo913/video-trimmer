@@ -13,3 +13,13 @@ logs/
 build/
 dist/
 _test_videos/
+
+# Local AI dev tooling / internal notes — not part of the published project
+.claude/
+CLAUDE.md
+HANDOFF.md
+BREAKDOWN.md
+PROOF.md
+*.spec.preicon.bak
+.pytest_cache/
+.ruff_cache/
