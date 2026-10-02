@@ -1,7 +1,7 @@
 """App-wide constants: colors, fonts, paths, supported formats."""
 
 APP_NAME = "Video Trimmer"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 # ── Theme ──────────────────────────────────────────────────────────
 COLORS = {
